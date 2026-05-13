@@ -1,6 +1,6 @@
 # Tiny Tapeout project information
 project:
-  title:        "tt JCT PoC"      # Project title
+  title:        "ttgf jct PoC"      # Project title
   author:       "JCT student"             # Your name
   discord:      ""                         # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
   description:  "Naive and very simple implementation of a stream cipher"      # One line description of what your project does
