@@ -1,72 +1,67 @@
 # SPDX-FileCopyrightText: © 2024 Tiny Tapeout
 # SPDX-License-Identifier: Apache-2.0
 
+
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles
+from cocotb.triggers import RisingEdge
 
 
-@cocotb.test()
-async def test_loopback(dut):
-    dut._log.info("Start")
-
-    # Set the clock period to 10 us (100 KHz)
-    clock = Clock(dut.clk, 10, unit="us")
-    cocotb.start_soon(clock.start())
-
-    # Reset
-    dut._log.info("Reset")
-    dut.ena.value = 1
-
-    # ui_in[0] == 0: Output is uio_in
+async def reset(dut):
+    dut.rst_n.value = 0
     dut.ui_in.value = 0
     dut.uio_in.value = 0
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 10)
+
+    for _ in range(5):
+        await RisingEdge(dut.clk)
+
     dut.rst_n.value = 1
 
-    for i in range(256):
-        dut.uio_in.value = i
-        await ClockCycles(dut.clk, 1)
-        assert dut.uo_out.value == i
+    for _ in range(5):
+        await RisingEdge(dut.clk)
 
-    # When under reset: Output is uio_in, uio is in input mode
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 1)
-    assert dut.uio_oe.value == 0
-    for i in range(256):
-        dut.ui_in.value = i
-        await ClockCycles(dut.clk, 1)
-        assert dut.uo_out.value == i
+
+async def load_byte(dut, byte, is_key):
+    dut.ui_in.value = byte
+
+    # idle
+    dut.uio_in.value = (is_key << 1) & 0xFE
+    await RisingEdge(dut.clk)
+
+    # pulse
+    dut.uio_in.value = (is_key << 1) | 1
+    await RisingEdge(dut.clk)
+
+    # back to idle
+    dut.uio_in.value = (is_key << 1) & 0xFE
+    
+    for _ in range(3):
+        await RisingEdge(dut.clk)
+
 
 @cocotb.test()
-async def test_counter(dut):
-    dut._log.info("Start")
+async def test_xor(dut):
 
-    # Set the clock period to 10 us (100 KHz)
-    clock = Clock(dut.clk, 10, unit="us")
+    clock = Clock(dut.clk, 10, unit="ns")
     cocotb.start_soon(clock.start())
 
-    # ui_in[0] == 1: bidirectional outputs enabled, put a counter on both output and bidirectional pins
-    dut.ui_in.value = 1
-    dut.uio_in.value = 0
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 10)
-    dut.rst_n.value = 1
-    await ClockCycles(dut.clk, 2)
+    await reset(dut)
 
-    dut._log.info("Testing counter")
-    for i in range(256):
-        assert dut.uo_out.value == dut.uio_out.value
-        assert dut.uo_out.value == i
-        await ClockCycles(dut.clk, 1)
+    key = 0xA5
+    data = 0x3C
 
-    dut._log.info("Testing reset")
-    for i in range(5):
-        assert dut.uo_out.value == i
-        await ClockCycles(dut.clk, 1)
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 2)
-    dut.rst_n.value = 1
-    await ClockCycles(dut.clk, 1)
-    assert dut.uo_out.value == 0
+    await load_byte(dut, data, is_key=0)
+    await load_byte(dut, key, is_key=1)
+
+  
+    for _ in range(3):
+        await RisingEdge(dut.clk)
+
+  
+    result = int(dut.uo_out.value)
+
+    expected = key ^ data
+
+    dut._log.info(f"result={result:#02x}, expected={expected:#02x}")
+
+    assert result == expected, f"Mismatch: got {result:#02x}, expected {expected:#02x}"
